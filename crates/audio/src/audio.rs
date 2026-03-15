@@ -75,26 +75,12 @@ pub fn ensure_devices_initialized(cx: &mut App) {
 
 #[derive(Debug, Copy, Clone, Eq, Hash, PartialEq)]
 pub enum Sound {
-    Joined,
-    GuestJoined,
-    Leave,
-    Mute,
-    Unmute,
-    StartScreenshare,
-    StopScreenshare,
     AgentDone,
 }
 
 impl Sound {
     fn file(&self) -> &'static str {
         match self {
-            Self::Joined => "joined_call",
-            Self::GuestJoined => "guest_joined_call",
-            Self::Leave => "leave_call",
-            Self::Mute => "mute",
-            Self::Unmute => "unmute",
-            Self::StartScreenshare => "start_screenshare",
-            Self::StopScreenshare => "stop_screenshare",
             Self::AgentDone => "agent_done",
         }
     }
@@ -289,12 +275,6 @@ impl Audio {
 
             output_mixer.add(source);
             Some(())
-        });
-    }
-
-    pub fn end_call(cx: &mut App) {
-        cx.update_default_global(|this: &mut Self, _cx| {
-            this.output_handle.take();
         });
     }
 
