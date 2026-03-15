@@ -807,26 +807,14 @@ impl<T: Item> ItemHandle for Entity<T> {
                         }
 
                         if item.item_focus_handle(cx).contains_focused(window, cx) {
-                            match leader_id {
-                                Some(CollaboratorId::Agent) => {}
-                                Some(CollaboratorId::PeerId(leader_peer_id)) => {
-                                    item.add_event_to_update_proto(
-                                        event,
-                                        &mut pending_update.borrow_mut(),
-                                        window,
-                                        cx,
-                                    );
-                                    pending_update_tx.unbounded_send(Some(leader_peer_id)).ok();
-                                }
-                                None => {
-                                    item.add_event_to_update_proto(
-                                        event,
-                                        &mut pending_update.borrow_mut(),
-                                        window,
-                                        cx,
-                                    );
-                                    pending_update_tx.unbounded_send(None).ok();
-                                }
+                            if !matches!(leader_id, Some(CollaboratorId::Agent)) {
+                                item.add_event_to_update_proto(
+                                    event,
+                                    &mut pending_update.borrow_mut(),
+                                    window,
+                                    cx,
+                                );
+                                pending_update_tx.unbounded_send(None).ok();
                             }
                         }
                     }
@@ -1266,13 +1254,8 @@ pub trait FollowableItemHandle: ItemHandle {
 }
 
 impl<T: FollowableItem> FollowableItemHandle for Entity<T> {
-    fn remote_id(&self, client: &Arc<Client>, _: &mut Window, cx: &mut App) -> Option<ViewId> {
-        self.read(cx).remote_id().or_else(|| {
-            client.peer_id().map(|creator| ViewId {
-                creator: CollaboratorId::PeerId(creator),
-                id: self.item_id().as_u64(),
-            })
-        })
+    fn remote_id(&self, _client: &Arc<Client>, _: &mut Window, cx: &mut App) -> Option<ViewId> {
+        self.read(cx).remote_id()
     }
 
     fn downgrade(&self) -> Box<dyn WeakFollowableItemHandle> {
