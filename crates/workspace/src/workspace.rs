@@ -1275,7 +1275,6 @@ pub struct FollowerState {
 
 struct FollowerView {
     view: Box<dyn FollowableItemHandle>,
-    location: Option<proto::PanelId>,
 }
 
 impl Workspace {
@@ -5128,10 +5127,7 @@ impl Workspace {
                     });
 
                     view.map(|view| {
-                        entry.insert(FollowerView {
-                            view,
-                            location: None,
-                        })
+                        entry.insert(FollowerView { view })
                     })
                 }
             };
@@ -7302,16 +7298,6 @@ impl WorkspaceStore {
 }
 
 impl ViewId {
-    pub(crate) fn from_proto(message: proto::ViewId) -> Result<Self> {
-        Ok(Self {
-            creator: message
-                .creator
-                .map(|_| CollaboratorId::Agent)
-                .context("creator is missing")?,
-            id: message.id,
-        })
-    }
-
     pub(crate) fn to_proto(self) -> Option<proto::ViewId> {
         None
     }
