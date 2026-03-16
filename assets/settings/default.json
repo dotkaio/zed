@@ -417,13 +417,6 @@
     "space": "•",
     "tab": "→",
   },
-  // Settings related to calls in Zed
-  "calls": {
-    // Join calls with the microphone live by default
-    "mute_on_join": false,
-    // Share your project when you are the first to join a channel
-    "share_on_join": false,
-  },
   // Toolbar related settings
   "toolbar": {
     // Whether to show breadcrumbs.
@@ -870,14 +863,6 @@
     // Set to 0 to collapse all items that have children, 1 or higher to collapse items at that depth or deeper.
     "expand_outlines_with_depth": 100,
   },
-  "collaboration_panel": {
-    // Whether to show the collaboration panel button in the status bar.
-    "button": true,
-    // Where to dock the collaboration panel. Can be 'left' or 'right'.
-    "dock": "left",
-    // Default width of the collaboration panel.
-    "default_width": 240,
-  },
   "git_panel": {
     // Whether to show the git panel button in the status bar.
     "button": true,
@@ -913,19 +898,6 @@
       // Default: inherits editor scrollbar settings
       // "show": null
     },
-  },
-  "message_editor": {
-    // Whether to automatically replace emoji shortcodes with emoji characters.
-    // For example: typing `:wave:` gets replaced with `👋`.
-    "auto_replace_emoji_shortcode": true,
-  },
-  "notification_panel": {
-    // Whether to show the notification panel button in the status bar.
-    "button": true,
-    // Where to dock the notification panel. Can be 'left' or 'right'.
-    "dock": "right",
-    // Default width of the notification panel.
-    "default_width": 380,
   },
   "agent": {
     // Whether the inline assistant should use streaming tools, when available
