@@ -180,11 +180,6 @@ impl TextThreadStore {
         let operations = this.update(&mut cx, |this, cx| {
             let project = this.project.upgrade().context("project not found")?;
 
-            anyhow::ensure!(
-                !project.read(cx).is_via_collab(),
-                "only the host contexts can be opened"
-            );
-
             let text_thread = this
                 .loaded_text_thread_for_id(&context_id, cx)
                 .context("context not found")?;
@@ -212,11 +207,6 @@ impl TextThreadStore {
     ) -> Result<proto::CreateContextResponse> {
         let (context_id, operations) = this.update(&mut cx, |this, cx| {
             let project = this.project.upgrade().context("project not found")?;
-            anyhow::ensure!(
-                !project.read(cx).is_via_collab(),
-                "can only create contexts as the host"
-            );
-
             let text_thread = this.create(cx);
             let context_id = text_thread.read(cx).id().clone();
 
@@ -257,11 +247,6 @@ impl TextThreadStore {
     ) -> Result<proto::SynchronizeContextsResponse> {
         this.update(&mut cx, |this, cx| {
             let project = this.project.upgrade().context("project not found")?;
-            anyhow::ensure!(
-                !project.read(cx).is_via_collab(),
-                "only the host can synchronize contexts"
-            );
-
             let mut local_versions = Vec::new();
             for remote_version_proto in envelope.payload.contexts {
                 let remote_version = TextThreadVersion::from_proto(&remote_version_proto);
@@ -697,11 +682,6 @@ impl TextThreadStore {
         let Some(project_id) = project.read(cx).remote_id() else {
             return;
         };
-        // For now, only the host can advertise their open contexts.
-        if project.read(cx).is_via_collab() {
-            return;
-        }
-
         let contexts = self
             .text_threads
             .iter()

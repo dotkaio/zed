@@ -98,14 +98,7 @@ pub struct GitStore {
     loading_diffs:
         HashMap<(BufferId, DiffKind), Shared<Task<Result<Entity<BufferDiff>, Arc<anyhow::Error>>>>>,
     diffs: HashMap<BufferId, Entity<BufferGitState>>,
-    shared_diffs: HashMap<proto::PeerId, HashMap<BufferId, SharedDiffs>>,
     _subscriptions: Vec<Subscription>,
-}
-
-#[derive(Default)]
-struct SharedDiffs {
-    unstaged: Option<Entity<BufferDiff>>,
-    uncommitted: Option<Entity<BufferDiff>>,
 }
 
 struct BufferGitState {
@@ -492,7 +485,6 @@ impl GitStore {
             active_repo_id: None,
             _subscriptions,
             loading_diffs: HashMap::default(),
-            shared_diffs: HashMap::default(),
             diffs: HashMap::default(),
         }
     }
@@ -652,12 +644,9 @@ impl GitStore {
                 downstream_client.take();
             }
         }
-        self.shared_diffs.clear();
     }
 
-    pub(crate) fn forget_shared_diffs_for(&mut self, peer_id: &proto::PeerId) {
-        self.shared_diffs.remove(peer_id);
-    }
+    pub(crate) fn forget_shared_diffs_for(&mut self, _peer_id: &proto::PeerId) {}
 
     pub fn active_repository(&self) -> Option<Entity<Repository>> {
         self.active_repo_id
@@ -1565,16 +1554,8 @@ impl GitStore {
                 })
                 .detach();
             }
-            BufferStoreEvent::SharedBufferClosed(peer_id, buffer_id) => {
-                if let Some(diffs) = self.shared_diffs.get_mut(peer_id) {
-                    diffs.remove(buffer_id);
-                }
-            }
             BufferStoreEvent::BufferDropped(buffer_id) => {
                 self.diffs.remove(buffer_id);
-                for diffs in self.shared_diffs.values_mut() {
-                    diffs.remove(buffer_id);
-                }
             }
             BufferStoreEvent::BufferChangedFilePath { buffer, .. } => {
                 // Whenever a buffer's file path changes, it's possible that the
@@ -1793,11 +1774,6 @@ impl GitStore {
                 upstream_project_id,
                 ..
             } => {
-                if upstream_client.is_via_collab() {
-                    return Task::ready(Err(anyhow!(
-                        "Git Clone isn't supported for project guests"
-                    )));
-                }
                 let request = upstream_client.request(proto::GitClone {
                     project_id: *upstream_project_id,
                     abs_path: path.to_string_lossy().into_owned(),
@@ -2767,13 +2743,6 @@ impl GitStore {
             })
             .context("missing buffer")?
             .await?;
-        this.update(&mut cx, |this, _| {
-            let shared_diffs = this
-                .shared_diffs
-                .entry(request.original_sender_id.unwrap_or(request.sender_id))
-                .or_default();
-            shared_diffs.entry(buffer_id).or_default().unstaged = Some(diff.clone());
-        });
         let staged_text = diff.read_with(&cx, |diff, cx| diff.base_text_string(cx));
         Ok(proto::OpenUnstagedDiffResponse { staged_text })
     }
@@ -2791,13 +2760,6 @@ impl GitStore {
             })
             .context("missing buffer")?
             .await?;
-        this.update(&mut cx, |this, _| {
-            let shared_diffs = this
-                .shared_diffs
-                .entry(request.original_sender_id.unwrap_or(request.sender_id))
-                .or_default();
-            shared_diffs.entry(buffer_id).or_default().uncommitted = Some(diff.clone());
-        });
         Ok(diff.read_with(&cx, |diff, cx| {
             use proto::open_uncommitted_diff_response::Mode;
 

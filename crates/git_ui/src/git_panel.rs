@@ -675,7 +675,6 @@ pub(crate) fn commit_message_editor(
         window,
         cx,
     );
-    commit_editor.set_collaboration_hub(Box::new(project));
     commit_editor.set_use_autoclose(false);
     commit_editor.set_show_gutter(false, cx);
     commit_editor.set_use_modal_editing(true);
@@ -3189,8 +3188,8 @@ impl GitPanel {
         })
     }
 
-    fn can_push_and_pull(&self, cx: &App) -> bool {
-        !self.project.read(cx).is_via_collab()
+    fn can_push_and_pull(&self, _cx: &App) -> bool {
+        true
     }
 
     fn get_remote(

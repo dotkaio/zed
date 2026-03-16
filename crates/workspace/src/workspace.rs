@@ -228,8 +228,6 @@ actions!(
         CloseProject,
         /// Opens the feedback dialog.
         Feedback,
-        /// Follows the next collaborator in the session.
-        FollowNextCollaborator,
         /// Moves the focused panel to the next position.
         MoveFocusedPanelToNextPosition,
         /// Creates a new file.
@@ -290,8 +288,6 @@ actions!(
         /// Clears all trusted worktrees, placing them in restricted mode on next open.
         /// Requires restart to take effect on already opened projects.
         ClearTrustedWorktrees,
-        /// Stops following a collaborator.
-        Unfollow,
         /// Restores the banner.
         RestoreBanner,
         /// Toggles expansion of the selected item.
@@ -2415,8 +2411,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> oneshot::Receiver<Option<Vec<PathBuf>>> {
-        if self.project.read(cx).is_via_collab()
-            || self.project.read(cx).is_via_remote_server()
+        if self.project.read(cx).is_via_remote_server()
             || !WorkspaceSettings::get_global(cx).use_system_path_prompts
         {
             let prompt = self.on_prompt_for_new_path.take().unwrap();
@@ -2867,13 +2862,12 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> Task<Result<()>> {
         let window_handle = window.window_handle().downcast::<MultiWorkspace>();
-        let is_remote = self.project.read(cx).is_via_collab();
         let has_worktree = self.project.read(cx).worktrees(cx).next().is_some();
         let has_dirty_items = self.items(cx).any(|item| item.is_dirty(cx));
 
         let window_to_replace = if replace_current_window {
             window_handle
-        } else if is_remote || has_worktree || has_dirty_items {
+        } else if has_worktree || has_dirty_items {
             None
         } else {
             window_handle
@@ -3104,14 +3098,6 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let project = self.project.read(cx);
-        if project.is_via_collab() {
-            self.show_error(
-                &anyhow!("You cannot add folders to someone else's project"),
-                cx,
-            );
-            return;
-        }
         let paths = self.prompt_for_open_path(
             PathPromptOptions {
                 files: false,
@@ -4806,42 +4792,6 @@ impl Workspace {
         Some(Task::ready(Ok(())))
     }
 
-    pub fn follow_next_collaborator(
-        &mut self,
-        _: &FollowNextCollaborator,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let next_leader_id = if let Some(leader_id) = self.leader_for_pane(&self.active_pane) {
-            if leader_id == CollaboratorId::Agent {
-                None
-            } else {
-                Some(leader_id)
-            }
-        } else if let Some(last_leader_id) =
-            self.last_leaders_by_pane.get(&self.active_pane.downgrade())
-        {
-            if *last_leader_id == CollaboratorId::Agent {
-                Some(CollaboratorId::Agent)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        let pane = self.active_pane.clone();
-        let Some(leader_id) = next_leader_id else {
-            return;
-        };
-        if self.unfollow_in_pane(&pane, window, cx) == Some(leader_id) {
-            return;
-        }
-        if let Some(task) = self.start_following(leader_id, window, cx) {
-            task.detach_and_log_err(cx)
-        }
-    }
-
     pub fn follow(
         &mut self,
         leader_id: impl Into<CollaboratorId>,
@@ -4949,9 +4899,7 @@ impl Workspace {
             }
         }
 
-        if project.is_via_collab() {
-            title.push_str(" ↙");
-        } else if project.is_shared() {
+        if project.is_shared() {
             title.push_str(" ↗");
         }
 
@@ -5820,16 +5768,13 @@ impl Workspace {
             .on_action(cx.listener(Self::save_all))
             .on_action(cx.listener(Self::send_keystrokes))
             .on_action(cx.listener(Self::add_folder_to_project))
-            .on_action(cx.listener(Self::follow_next_collaborator))
+
             .on_action(cx.listener(Self::close_window))
             .on_action(cx.listener(Self::activate_pane_at_index))
             .on_action(cx.listener(Self::move_item_to_pane_at_index))
             .on_action(cx.listener(Self::move_focused_panel_to_next_position))
             .on_action(cx.listener(Self::toggle_edit_predictions_all_files))
-            .on_action(cx.listener(|workspace, _: &Unfollow, window, cx| {
-                let pane = workspace.active_pane().clone();
-                workspace.unfollow_in_pane(&pane, window, cx);
-            }))
+
             .on_action(cx.listener(|workspace, action: &Save, window, cx| {
                 workspace
                     .save_active_item(action.save_intent.unwrap_or(SaveIntent::Save), window, cx)

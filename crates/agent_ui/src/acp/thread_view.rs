@@ -412,13 +412,6 @@ impl AcpServerView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> ServerState {
-        if project.read(cx).is_via_collab()
-            && agent.clone().downcast::<NativeAgentServer>().is_none()
-        {
-            return ServerState::LoadError(LoadError::Other(
-                "External agents are not yet supported in shared projects.".into(),
-            ));
-        }
         let mut worktrees = project.read(cx).visible_worktrees(cx).collect::<Vec<_>>();
         // Pick the first non-single-file worktree for the root directory if there are any,
         // and otherwise the parent of a single-file worktree, falling back to $HOME if there are no visible worktrees.

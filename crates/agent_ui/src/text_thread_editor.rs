@@ -262,8 +262,6 @@ impl TextThreadEditor {
             editor.set_show_indent_guides(false, cx);
             editor.set_completion_provider(Some(Rc::new(completion_provider)));
             editor.set_menu_edit_predictions_policy(MenuEditPredictionsPolicy::Never);
-            editor.set_collaboration_hub(Box::new(project.clone()));
-
             let show_edit_predictions = all_language_settings(None, cx)
                 .edit_predictions
                 .enabled_in_text_threads;

@@ -1,6 +1,5 @@
 use crate::{
     ProjectPath,
-    lsp_store::OpenLspBufferHandle,
     worktree_store::{WorktreeStore, WorktreeStoreEvent},
 };
 use anyhow::{Context as _, Result, anyhow};
@@ -37,7 +36,6 @@ pub struct BufferStore {
     opened_buffers: HashMap<BufferId, OpenBuffer>,
     path_to_buffer_id: HashMap<ProjectPath, BufferId>,
     downstream_client: Option<(AnyProtoClient, u64)>,
-    shared_buffers: HashMap<proto::PeerId, HashMap<BufferId, SharedBuffer>>,
     non_searchable_buffers: HashSet<BufferId>,
     project_search: RemoteProjectSearchState,
 }
@@ -50,12 +48,6 @@ struct RemoteProjectSearchState {
     next_id: u64,
     // Used by the side running the actual search for match candidates to potentially cancel the search prematurely.
     searches_in_progress: HashMap<(PeerId, u64), Task<Result<()>>>,
-}
-
-#[derive(Hash, Eq, PartialEq, Clone)]
-struct SharedBuffer {
-    buffer: Entity<Buffer>,
-    lsp_handle: Option<OpenLspBufferHandle>,
 }
 
 enum BufferStoreState {
@@ -91,7 +83,6 @@ pub enum BufferStoreEvent {
         buffer: Entity<Buffer>,
         project_path: ProjectPath,
     },
-    SharedBufferClosed(proto::PeerId, BufferId),
     BufferDropped(BufferId),
     BufferChangedFilePath {
         buffer: Entity<Buffer>,
@@ -240,10 +231,6 @@ impl RemoteBufferStore {
                     }
                 } else if chunk.is_last {
                     self.loading_remote_buffers_by_id.remove(&buffer_id);
-                    if self.upstream_client.is_via_collab() {
-                        // retain buffers sent by peers to avoid races.
-                        self.shared_with_me.insert(buffer.clone());
-                    }
 
                     if let Some(senders) = self.remote_buffer_listeners.remove(&buffer_id) {
                         for sender in senders {
@@ -791,7 +778,6 @@ impl BufferStore {
             downstream_client: None,
             opened_buffers: Default::default(),
             path_to_buffer_id: Default::default(),
-            shared_buffers: Default::default(),
             loading_buffers: Default::default(),
             non_searchable_buffers: Default::default(),
             worktree_store,
@@ -818,7 +804,6 @@ impl BufferStore {
             opened_buffers: Default::default(),
             path_to_buffer_id: Default::default(),
             loading_buffers: Default::default(),
-            shared_buffers: Default::default(),
             non_searchable_buffers: Default::default(),
             worktree_store,
             project_search: Default::default(),
@@ -1211,21 +1196,6 @@ impl BufferStore {
         })
     }
 
-    pub fn register_shared_lsp_handle(
-        &mut self,
-        peer_id: proto::PeerId,
-        buffer_id: BufferId,
-        handle: OpenLspBufferHandle,
-    ) {
-        if let Some(shared_buffers) = self.shared_buffers.get_mut(&peer_id)
-            && let Some(buffer) = shared_buffers.get_mut(&buffer_id)
-        {
-            buffer.lsp_handle = Some(handle);
-            return;
-        }
-        debug_panic!("tried to register shared lsp handle, but buffer was not shared")
-    }
-
     pub fn handle_synchronize_buffers(
         &mut self,
         envelope: TypedEnvelope<proto::SynchronizeBuffers>,
@@ -1240,20 +1210,10 @@ impl BufferStore {
             anyhow::bail!("missing original_sender_id on SynchronizeBuffers request");
         };
 
-        self.shared_buffers.entry(guest_id).or_default().clear();
         for buffer in envelope.payload.buffers {
             let buffer_id = BufferId::new(buffer.id)?;
             let remote_version = language::proto::deserialize_version(&buffer.version);
             if let Some(buffer) = self.get(buffer_id) {
-                self.shared_buffers
-                    .entry(guest_id)
-                    .or_default()
-                    .entry(buffer_id)
-                    .or_insert_with(|| SharedBuffer {
-                        buffer: buffer.clone(),
-                        lsp_handle: None,
-                    });
-
                 let buffer = buffer.read(cx);
                 response.buffers.push(proto::BufferVersion {
                     id: buffer_id.into(),
@@ -1427,24 +1387,9 @@ impl BufferStore {
         envelope: TypedEnvelope<proto::CloseBuffer>,
         mut cx: AsyncApp,
     ) -> Result<()> {
-        let peer_id = envelope.sender_id;
-        let buffer_id = BufferId::new(envelope.payload.buffer_id)?;
-        this.update(&mut cx, |this, cx| {
-            if let Some(shared) = this.shared_buffers.get_mut(&peer_id)
-                && shared.remove(&buffer_id).is_some()
-            {
-                cx.emit(BufferStoreEvent::SharedBufferClosed(peer_id, buffer_id));
-                if shared.is_empty() {
-                    this.shared_buffers.remove(&peer_id);
-                }
-                return;
-            }
-            debug_panic!(
-                "peer_id {} closed buffer_id {} which was either not open or already closed",
-                peer_id,
-                buffer_id
-            )
-        });
+        let _ = this;
+        let _ = envelope;
+        let _ = cx;
         Ok(())
     }
 
@@ -1557,17 +1502,6 @@ impl BufferStore {
         cx: &mut Context<Self>,
     ) -> Task<Result<()>> {
         let buffer_id = buffer.read(cx).remote_id();
-        let shared_buffers = self.shared_buffers.entry(peer_id).or_default();
-        if shared_buffers.contains_key(&buffer_id) {
-            return Task::ready(Ok(()));
-        }
-        shared_buffers.insert(
-            buffer_id,
-            SharedBuffer {
-                buffer: buffer.clone(),
-                lsp_handle: None,
-            },
-        );
 
         let Some((client, project_id)) = self.downstream_client.clone() else {
             return Task::ready(Ok(()));
@@ -1615,22 +1549,12 @@ impl BufferStore {
         })
     }
 
-    pub fn forget_shared_buffers(&mut self) {
-        self.shared_buffers.clear();
-    }
+    pub fn forget_shared_buffers(&mut self) {}
 
-    pub fn forget_shared_buffers_for(&mut self, peer_id: &proto::PeerId) {
-        self.shared_buffers.remove(peer_id);
-    }
-
-    pub fn update_peer_id(&mut self, old_peer_id: &proto::PeerId, new_peer_id: proto::PeerId) {
-        if let Some(buffers) = self.shared_buffers.remove(old_peer_id) {
-            self.shared_buffers.insert(new_peer_id, buffers);
-        }
-    }
+    pub fn forget_shared_buffers_for(&mut self, _peer_id: &proto::PeerId) {}
 
     pub fn has_shared_buffers(&self) -> bool {
-        !self.shared_buffers.is_empty()
+        false
     }
 
     pub fn create_local_buffer(

@@ -1710,10 +1710,6 @@ impl ProtoClient for Client {
         &self.handler_set
     }
 
-    fn is_via_collab(&self) -> bool {
-        true
-    }
-
     fn has_wsl_interop(&self) -> bool {
         false
     }

@@ -96,7 +96,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use util::post_inc;
 use util::{RangeExt, ResultExt, debug_panic};
 use workspace::{
-    CollaboratorId, ItemHandle, ItemSettings, OpenInTerminal, OpenTerminal, RevealInProjectPanel,
+    ItemHandle, ItemSettings, OpenInTerminal, OpenTerminal, RevealInProjectPanel,
     Workspace,
     item::{BreadcrumbText, Item, ItemBufferKind},
 };
@@ -1495,9 +1495,6 @@ impl EditorElement {
         cx: &mut Context<Editor>,
     ) {
         let snapshot = &position_map.snapshot;
-        let Some(hub) = editor.collaboration_hub() else {
-            return;
-        };
         let start = snapshot.display_snapshot.clip_point(
             DisplayPoint::new(point.row(), point.column().saturating_sub(1)),
             Bias::Left,
@@ -1517,12 +1514,12 @@ impl EditorElement {
                 .buffer_snapshot()
                 .anchor_after(end.to_point(&snapshot.display_snapshot));
 
-        let Some(selection) = snapshot.remote_selections_in_range(&range, hub, cx).next() else {
+        let Some(_selection) = snapshot.remote_selections_in_range(&range, cx).next() else {
             return;
         };
         let key = crate::HoveredCursor {
-            replica_id: selection.replica_id,
-            selection_id: selection.selection.id,
+            replica_id: _selection.replica_id,
+            selection_id: _selection.selection.id,
         };
         editor.hovered_cursors.insert(
             key.clone(),
@@ -1577,7 +1574,7 @@ impl EditorElement {
                         editor.cursor_shape,
                         &snapshot.display_snapshot,
                         is_newest,
-                        editor.leader_id.is_none(),
+                        true,
                         None,
                     );
                     if is_newest {
@@ -1632,53 +1629,7 @@ impl EditorElement {
                 }
             }
 
-            if let Some(collaboration_hub) = &editor.collaboration_hub {
-                // When following someone, render the local selections in their color.
-                if let Some(leader_id) = editor.leader_id {
-                    if let CollaboratorId::Agent = leader_id {
-                        if let Some((local_selection_style, _)) = selections.first_mut() {
-                            *local_selection_style = cx.theme().players().agent();
-                        }
-                    }
-                }
-
-                let mut remote_selections = HashMap::default();
-                for selection in snapshot.remote_selections_in_range(
-                    &(start_anchor..end_anchor),
-                    collaboration_hub.as_ref(),
-                    cx,
-                ) {
-                    // Don't re-render the leader's selections, since the local selections
-                    // match theirs.
-                    if Some(selection.collaborator_id) == editor.leader_id {
-                        continue;
-                    }
-                    let key = HoveredCursor {
-                        replica_id: selection.replica_id,
-                        selection_id: selection.selection.id,
-                    };
-
-                    let is_shown =
-                        editor.show_cursor_names || editor.hovered_cursors.contains_key(&key);
-
-                    remote_selections
-                        .entry(selection.replica_id)
-                        .or_insert((selection.color, Vec::new()))
-                        .1
-                        .push(SelectionLayout::new(
-                            selection.selection,
-                            selection.line_mode,
-                            editor.cursor_offset_on_selection,
-                            selection.cursor_shape,
-                            &snapshot.display_snapshot,
-                            false,
-                            false,
-                            if is_shown { selection.user_name } else { None },
-                        ));
-                }
-
-                selections.extend(remote_selections.into_values());
-            } else if !editor.is_focused(window) && editor.show_cursor_when_unfocused {
+            if !editor.is_focused(window) && editor.show_cursor_when_unfocused {
                 let cursor_offset_on_selection = editor.cursor_offset_on_selection;
 
                 let layouts = snapshot
@@ -1720,28 +1671,11 @@ impl EditorElement {
     ) -> Vec<(DisplayPoint, Hsla)> {
         let editor = self.editor.read(cx);
         let mut cursors = Vec::new();
-        let mut skip_local = false;
-        let mut add_cursor = |anchor: Anchor, color| {
+        let add_cursor = |anchor: Anchor, color| {
             cursors.push((anchor.to_display_point(&snapshot.display_snapshot), color));
         };
-        // Remote cursors
-        if let Some(collaboration_hub) = &editor.collaboration_hub {
-            for remote_selection in snapshot.remote_selections_in_range(
-                &(Anchor::min()..Anchor::max()),
-                collaboration_hub.deref(),
-                cx,
-            ) {
-                add_cursor(
-                    remote_selection.selection.head(),
-                    remote_selection.color.cursor,
-                );
-                if Some(remote_selection.collaborator_id) == editor.leader_id {
-                    skip_local = true;
-                }
-            }
-        }
         // Local cursors
-        if !skip_local {
+        {
             let color = cx.theme().players().local().cursor;
             editor
                 .selections

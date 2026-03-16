@@ -9178,10 +9178,6 @@ impl LspStore {
             // but it's unclear if we need it.
             this.pull_diagnostics_for_buffer(buffer.clone(), cx)
                 .detach();
-            this.buffer_store().update(cx, |buffer_store, _| {
-                buffer_store.register_shared_lsp_handle(peer_id, buffer_id, handle);
-            });
-
             Ok(())
         })?;
         Ok(proto::Ack {})
